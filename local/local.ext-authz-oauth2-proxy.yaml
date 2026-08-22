@@ -1,0 +1,33 @@
+apiVersion: security.istio.io/v1beta1
+kind: AuthorizationPolicy
+metadata:
+  name: ext-authz-oauth2-proxy
+  #namespace: istio-system
+  namespace: default # TODO: to be adjusted later on.  Added for FluxCD server-side application for now.
+spec:
+  selector:
+    matchLabels:
+      app: istio-ingressgateway # TODO: is namespace required here??
+      istio: ingressgateway # TODO: is namespace required here??
+  action: CUSTOM
+  #action: ALLOW
+  provider:
+    name: oauth2-proxy
+  rules:
+    - to:
+        - operation:
+            hosts:
+              [
+                "app.${CLUSTER_DOMAIN}",
+                "admin.${CLUSTER_DOMAIN}",
+                "portal.${CLUSTER_DOMAIN}",
+                "api.${CLUSTER_DOMAIN}",
+                "prometheus.${CLUSTER_DOMAIN}",
+                "grafana.${CLUSTER_DOMAIN}",
+                "kiali.${CLUSTER_DOMAIN}",
+                "chat.${CLUSTER_DOMAIN}",
+                "memory.${CLUSTER_DOMAIN}",
+                "agent.${CLUSTER_DOMAIN}",
+              ]
+            #notPaths: ["/auth/*"]
+            notHosts: ["www.${CLUSTER_DOMAIN}", "sso.${CLUSTER_DOMAIN}"]

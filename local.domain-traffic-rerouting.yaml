@@ -1,0 +1,54 @@
+## IS THAT EVEN REQUIRED AT THIS POINT?  POINTING DIRECTLY TO THE SVC.CLUSTER.LOCAL, DNS SEEMS TO WORK PROPERLY
+#
+# apiVersion: networking.istio.io/v1beta1
+# kind: DestinationRule
+# metadata:
+#   name: prometheus-destination-rule
+# spec:
+#   host: prometheus.docker.internal # Must match the host in the ServiceEntry
+#   trafficPolicy:
+#     tls:
+#       mode: SIMPLE
+#       sni: prometheus-server.prometheus.svc.cluster.local # The SNI value for the external service
+# ---
+# apiVersion: networking.istio.io/v1beta1
+# kind: ServiceEntry
+# metadata:
+#   name: my-external-service-entry
+# spec:
+#   hosts:
+#     - prometheus.docker.internal # The external service's hostname
+#   location: MESH_EXTERNAL # Indicates that this is external traffic
+#   ports:
+#     - number: 80
+#       name: http
+#   resolution: DNS
+#   endpoints:
+#     - address: 127.0.0.1 # Replace with the actual IP or hostname
+#       ports:
+#         http: 80
+#   endpoints:
+#     - address: prometheus-server.prometheus.svc.cluster.local # Replace with the actual IP or hostname
+#       ports:
+#         http: 80
+# ---
+# apiVersion: networking.istio.io/v1beta1
+# kind: ServiceEntry
+# metadata:
+#   name: prometheus-svc-entry
+# spec:
+#   hosts:
+#     - prometheus.docker.internal
+#   location: MESH_EXTERNAL
+#   resolution: DNS
+#   ports:
+#     - number: 80
+#       name: http
+#       protocol: HTTP
+#     - number: 443
+#       name: https
+#       protocol: HTTPS
+#   endpoints:
+#     - address: prometheus-server.prometheus.svc.cluster.local
+#       ports:
+#         http: 80

@@ -1,0 +1,1134 @@
+# apiVersion: networking.k8s.io/v1
+# kind: Ingress
+# metadata:
+#   name: boucio-ingress
+#   namespace: istio-system
+#   #annotations:
+#   #  kubernetes.io/ingress.class: gce
+#   #  kubernetes.io/ingress.global-static-ip-name: "your-static-ip-name"  # Replace with your static IP name
+#   #  kubernetes.io/ingress.global-static-ip-name: example-com-lb-static-ip
+#   #  networking.gke.io/v1beta1.FrontendConfig: ssl-redirect-frontendconfig
+#   #  ingress.gcp.kubernetes.io/pre-shared-cert: ssl-example-com
+# spec:
+#   rules:
+#     - host: "*.${CLUSTER_DOMAIN}"
+#       http:
+#         paths:
+#           - pathType: Prefix
+#             path: "/"
+#             backend:
+#               service:
+#                 name: istio-ingressgateway #.istio-system.svc.cluster.local # Replace with the name of your default service
+#                 port:
+#                   number: 80
+#   defaultBackend:
+#     service:
+#       name: istio-ingressgateway
+#       port:
+#         number: 80
+#   tls:
+#     - hosts:
+#         - "${CLUSTER_DOMAIN}"
+#         - "*.${CLUSTER_DOMAIN}"
+#       secretName: bouc-local-tls-secret
+# ---
+apiVersion: networking.istio.io/v1beta1
+kind: Gateway
+metadata:
+  name: boucio-gateway
+  namespace: default # TODO: to be adjusted later on.  Added for FluxCD server-side application for now.
+spec:
+  selector:
+    app: istio-ingressgateway
+    istio: ingressgateway
+  servers:
+    - port:
+        number: 80
+        name: http
+        protocol: HTTP
+      hosts:
+        - app.${CLUSTER_DOMAIN}
+        - admin.${CLUSTER_DOMAIN}
+        - portal.${CLUSTER_DOMAIN}
+        - api.${CLUSTER_DOMAIN}
+        - www.${CLUSTER_DOMAIN}
+        - sso.${CLUSTER_DOMAIN}
+        - prometheus.${CLUSTER_DOMAIN}
+        - grafana.${CLUSTER_DOMAIN}
+        - kiali.${CLUSTER_DOMAIN}
+        - chat.${CLUSTER_DOMAIN}
+        - agent.${CLUSTER_DOMAIN}
+        - tracing.${CLUSTER_DOMAIN}
+        - jaeger.${CLUSTER_DOMAIN}
+        - memory.${CLUSTER_DOMAIN}
+      tls:
+        httpsRedirect: false # Required as ACME challenge needs to be done under HTTP; HTTPS redirect handled within the VirtualSerice.
+    - port:
+        number: 443
+        name: https
+        protocol: HTTPS
+      hosts:
+        - app.${CLUSTER_DOMAIN}
+        - api.${CLUSTER_DOMAIN}
+        - admin.${CLUSTER_DOMAIN}
+        - portal.${CLUSTER_DOMAIN}
+        - www.${CLUSTER_DOMAIN}
+        - sso.${CLUSTER_DOMAIN}
+        - prometheus.${CLUSTER_DOMAIN}
+        - grafana.${CLUSTER_DOMAIN}
+        - kiali.${CLUSTER_DOMAIN}
+        - chat.${CLUSTER_DOMAIN}
+        - agent.${CLUSTER_DOMAIN}
+        - tracing.${CLUSTER_DOMAIN}
+        - jaeger.${CLUSTER_DOMAIN}
+        - memory.${CLUSTER_DOMAIN}
+      tls:
+        mode: SIMPLE
+        minProtocolVersion: TLSV1_2
+        # minProtocolVersion: TLS_AUTO
+        credentialName: bouc-local-tls-secret
+---
+apiVersion: networking.istio.io/v1beta1
+kind: VirtualService
+metadata:
+  name: boucio-root-virtualservice
+  namespace: default # TODO: to be adjusted later on.  Added for FluxCD server-side application for now.
+spec:
+  hosts:
+    - "${CLUSTER_DOMAIN}"
+  gateways:
+    - boucio-gateway
+    - mesh
+  http:
+    - redirect:
+        authority: "www.${CLUSTER_DOMAIN}"
+        scheme: https
+---
+apiVersion: networking.istio.io/v1beta1
+kind: VirtualService
+metadata:
+  name: boucio-www-virtualservice
+  namespace: default # TODO: to be adjusted later on.  Added for FluxCD server-side application for now.
+spec:
+  hosts:
+    - "www.${CLUSTER_DOMAIN}"
+  gateways:
+    - boucio-gateway
+    - mesh
+  http:
+    - match:
+        - scheme:
+            exact: http
+      redirect:
+        scheme: https
+    - match:
+        - gateways:
+            - mesh
+            - boucio-gateway
+      route:
+        - destination:
+            host: web-chart-service.default.svc.cluster.local
+            port:
+              number: 80
+      name: "to-www-route"
+---
+apiVersion: networking.istio.io/v1beta1
+kind: VirtualService
+metadata:
+  name: boucio-sso-virtualservice
+  namespace: default # TODO: to be adjusted later on.  Added for FluxCD server-side application for now.
+spec:
+  hosts:
+    - "sso.${CLUSTER_DOMAIN}"
+  gateways:
+    - boucio-gateway
+    - mesh
+  http:
+    - match:
+        - scheme:
+            exact: http
+      redirect:
+        scheme: https
+    - route:
+        - destination:
+            host: keycloak-release.keycloak.svc.cluster.local
+            port:
+              number: 80
+              #number: 443
+      corsPolicy: # CORS policy required since app.* will be calling sso.${CLUSTER_DOMAIN} to obtain the tokens.
+        allowOrigins:
+          - exact: https://app.${CLUSTER_DOMAIN}
+          - exact: https://chat.${CLUSTER_DOMAIN}
+          - exact: https://agent.${CLUSTER_DOMAIN}
+          - exact: https://memory.${CLUSTER_DOMAIN}
+          - exact: https://admin.${CLUSTER_DOMAIN}
+          - exact: https://portal.${CLUSTER_DOMAIN}
+          - exact: http://localhost:3000
+          - exact: http://localhost:8080
+          - exact: http://localhost:8081
+          - exact: https://oauth.pstmn.io
+        allowMethods:
+          - POST
+          - GET
+          - PUT
+          - DELETE
+          - PATCH
+          - OPTIONS
+        allowCredentials: true
+        allowHeaders:
+          - content-type
+          - authorization
+          - x-auth-request-access-token
+          - Access-Control-Allow-Origin
+          - gap-auth
+          - server
+          - x-auth-request-email
+          - x-auth-request-preferred-username
+          - x-envoy-upstream-service-time
+          - refresh-token
+          - X-Forwarded-For
+          - x-active-org
+          - forwarded
+        maxAge: "24h"
+      name: "to-keycloak-route"
+---
+apiVersion: networking.istio.io/v1beta1
+kind: VirtualService
+metadata:
+  name: boucio-admin-virtualservice
+  namespace: default # TODO: to be adjusted later on.  Added for FluxCD server-side application for now.
+spec:
+  hosts:
+    - "admin.${CLUSTER_DOMAIN}"
+  gateways:
+    - boucio-gateway
+    - mesh
+  http:
+    - match:
+        - scheme:
+            exact: http
+      redirect:
+        scheme: https
+    # See sandbox.ingress-gateway.yaml for the same route.
+    # - match:
+    #     - gateways:
+    #         - boucio-gateway
+    #   route:
+    #     - destination:
+    #         host: oauth2-proxy-rel.oauth2-proxy.svc.cluster.local
+    #         port:
+    #           number: 80
+    #   name: "to-oauth2proxy-route"
+    - match:
+        - uri:
+            prefix: /oauth2
+          gateways:
+            - mesh
+      route:
+        - destination:
+            host: oauth2-proxy-rel.oauth2-proxy.svc.cluster.local
+            port:
+              number: 80
+      name: "to-oauth2proxy-route-2"
+    - match:
+        - gateways:
+            - mesh
+            - boucio-gateway
+      route:
+        - destination:
+            host: admin-chart-service.default.svc.cluster.local
+            port:
+              number: 80
+      name: "to-admin-route"
+---
+apiVersion: networking.istio.io/v1beta1
+kind: VirtualService
+metadata:
+  name: boucio-portal-virtualservice
+  namespace: default # TODO: to be adjusted later on.  Added for FluxCD server-side application for now.
+spec:
+  hosts:
+    - "portal.${CLUSTER_DOMAIN}"
+  gateways:
+    - boucio-gateway
+    - mesh
+  http:
+    - match:
+        - scheme:
+            exact: http
+      redirect:
+        scheme: https
+    # See sandbox.ingress-gateway.yaml for the same route.
+    # - match:
+    #     - gateways:
+    #         - boucio-gateway
+    #   route:
+    #     - destination:
+    #         host: oauth2-proxy-rel.oauth2-proxy.svc.cluster.local
+    #         port:
+    #           number: 80
+    #   name: "to-oauth2proxy-route"
+    - match:
+        - uri:
+            prefix: /oauth2
+          gateways:
+            - mesh
+      route:
+        - destination:
+            host: oauth2-proxy-rel.oauth2-proxy.svc.cluster.local
+            port:
+              number: 80
+      name: "to-oauth2proxy-route-2"
+    - match:
+        - gateways:
+            - mesh
+            - boucio-gateway
+      route:
+        - destination:
+            host: portal-chart-service.default.svc.cluster.local
+            port:
+              number: 80
+      name: "to-portal-route"
+---
+apiVersion: networking.istio.io/v1beta1
+kind: VirtualService
+metadata:
+  name: boucio-api-virtualservice
+  namespace: default # TODO: to be adjusted later on.  Added for FluxCD server-side application for now.
+spec:
+  hosts:
+    - "api.${CLUSTER_DOMAIN}"
+  gateways:
+    - boucio-gateway
+    - mesh
+  http:
+    - match:
+        - scheme:
+            exact: http
+      redirect:
+        scheme: https
+    - match:
+        - gateways:
+            - boucio-gateway
+          # uri:
+          #   regex: ^(?!http:\/\/localhost:3000\/)[\s\S]*
+      route:
+        - destination:
+            host: oauth2-proxy-rel.oauth2-proxy.svc.cluster.local
+            port:
+              number: 80
+      corsPolicy:
+        allowOrigins:
+          - exact: https://app.${CLUSTER_DOMAIN}
+          - exact: https://chat.${CLUSTER_DOMAIN}
+          - exact: https://agent.${CLUSTER_DOMAIN}
+          - exact: https://memory.${CLUSTER_DOMAIN}
+          - exact: https://admin.${CLUSTER_DOMAIN}
+          - exact: https://portal.${CLUSTER_DOMAIN}
+          - exact: http://localhost:3000
+          - exact: http://localhost:8080
+          - exact: http://localhost:8081
+          - exact: https://oauth.pstmn.io
+        allowMethods:
+          - POST
+          - GET
+          - PUT
+          - DELETE
+          - PATCH
+          - OPTIONS
+        allowCredentials: true
+        allowHeaders:
+          - content-type
+          - authorization
+          - x-auth-request-access-token
+          - Access-Control-Allow-Origin
+          - gap-auth
+          - server
+          - x-auth-request-email
+          - x-auth-request-preferred-username
+          - x-envoy-upstream-service-time
+          - refresh-token
+          - X-Forwarded-For
+          - x-active-org
+          - forwarded
+        maxAge: "24h"
+      name: "to-oauth2proxy-route"
+    - match:
+        - uri:
+            prefix: /oauth2
+          gateways:
+            - mesh
+      route:
+        - destination:
+            host: oauth2-proxy-rel.oauth2-proxy.svc.cluster.local
+            port:
+              number: 80
+      corsPolicy:
+        allowOrigins:
+          - exact: https://app.${CLUSTER_DOMAIN}
+          - exact: https://chat.${CLUSTER_DOMAIN}
+          - exact: https://agent.${CLUSTER_DOMAIN}
+          - exact: https://memory.${CLUSTER_DOMAIN}
+          - exact: https://admin.${CLUSTER_DOMAIN}
+          - exact: https://portal.${CLUSTER_DOMAIN}
+          - exact: http://localhost:3000
+          - exact: http://localhost:8080
+          - exact: http://localhost:8081
+          - exact: https://oauth.pstmn.io
+        allowMethods:
+          - POST
+          - GET
+          - PUT
+          - DELETE
+          - PATCH
+          - OPTIONS
+        allowCredentials: true
+        allowHeaders:
+          - content-type
+          - authorization
+          - x-auth-request-access-token
+          - Access-Control-Allow-Origin
+          - gap-auth
+          - server
+          - x-auth-request-email
+          - x-auth-request-preferred-username
+          - x-envoy-upstream-service-time
+          - refresh-token
+          - X-Forwarded-For
+          - x-active-org
+          - forwarded
+        maxAge: "24h"
+      name: "to-oauth2proxy-route-2"
+    - match:
+        - uri:
+            prefix: /ollama
+          gateways:
+            - mesh
+      rewrite:
+        uriRegexRewrite:
+          #match: "^/ollama/(.*)$" # Matches any path under /ollama/
+          match: /ollama(/|$)(.*)
+          rewrite: /\2 # Rewrites to remove /ollama/
+      route:
+        - destination:
+            host: ollama-chart.default.svc.cluster.local
+            port:
+              number: 11434
+      corsPolicy:
+        allowOrigins:
+          - exact: https://app.${CLUSTER_DOMAIN}
+          - exact: https://chat.${CLUSTER_DOMAIN}
+          - exact: https://agent.${CLUSTER_DOMAIN}
+          - exact: https://memory.${CLUSTER_DOMAIN}
+          - exact: https://admin.${CLUSTER_DOMAIN}
+          - exact: https://portal.${CLUSTER_DOMAIN}
+          - exact: http://localhost:3000
+          - exact: http://localhost:8080
+          - exact: http://localhost:8081
+          - exact: https://oauth.pstmn.io
+        allowMethods:
+          - POST
+          - GET
+          - PUT
+          - DELETE
+          - PATCH
+          - OPTIONS
+        allowCredentials: true
+        allowHeaders:
+          - content-type
+          - authorization
+          - x-auth-request-access-token
+          - Access-Control-Allow-Origin
+          - gap-auth
+          - server
+          - x-auth-request-email
+          - x-auth-request-preferred-username
+          - x-envoy-upstream-service-time
+          - refresh-token
+          - X-Forwarded-For
+          - x-active-org
+          - forwarded
+        maxAge: "24h"
+      name: "to-api-route-for-ollama"
+    - match:
+        - uri:
+            prefix: /v1/chats
+          gateways:
+            - mesh
+      route:
+        - destination:
+            host: chatbot-api-chart.default.svc.cluster.local
+            port:
+              number: 80
+      corsPolicy:
+        allowOrigins:
+          - exact: https://app.${CLUSTER_DOMAIN}
+          - exact: https://chat.${CLUSTER_DOMAIN}
+          - exact: https://agent.${CLUSTER_DOMAIN}
+          - exact: https://memory.${CLUSTER_DOMAIN}
+          - exact: https://admin.${CLUSTER_DOMAIN}
+          - exact: https://portal.${CLUSTER_DOMAIN}
+          - exact: http://localhost:3000
+          - exact: http://localhost:8080
+          - exact: http://localhost:8081
+          - exact: https://oauth.pstmn.io
+        allowMethods:
+          - POST
+          - GET
+          - PUT
+          - DELETE
+          - PATCH
+          - OPTIONS
+        allowCredentials: true
+        allowHeaders:
+          - content-type
+          - authorization
+          - x-auth-request-access-token
+          - Access-Control-Allow-Origin
+          - gap-auth
+          - server
+          - x-auth-request-email
+          - x-auth-request-preferred-username
+          - x-envoy-upstream-service-time
+          - refresh-token
+          - X-Forwarded-For
+          - x-active-org
+          - forwarded
+        maxAge: "24h"
+      name: "to-api-route-for-chatbot-api-chats"
+    - match:
+        - uri:
+            prefix: /v1/memories
+          gateways:
+            - mesh
+      route:
+        - destination:
+            host: memory-api-chart.default.svc.cluster.local
+            port:
+              number: 80
+      corsPolicy:
+        allowOrigins:
+          - exact: https://app.${CLUSTER_DOMAIN}
+          - exact: https://chat.${CLUSTER_DOMAIN}
+          - exact: https://agent.${CLUSTER_DOMAIN}
+          - exact: https://memory.${CLUSTER_DOMAIN}
+          - exact: https://admin.${CLUSTER_DOMAIN}
+          - exact: https://portal.${CLUSTER_DOMAIN}
+          - exact: http://localhost:3000
+          - exact: http://localhost:8080
+          - exact: http://localhost:8081
+          - exact: https://oauth.pstmn.io
+        allowMethods:
+          - POST
+          - GET
+          - PUT
+          - DELETE
+          - PATCH
+          - OPTIONS
+        allowCredentials: true
+        allowHeaders:
+          - content-type
+          - authorization
+          - x-auth-request-access-token
+          - Access-Control-Allow-Origin
+          - gap-auth
+          - server
+          - x-auth-request-email
+          - x-auth-request-preferred-username
+          - x-envoy-upstream-service-time
+          - refresh-token
+          - X-Forwarded-For
+          - x-active-org
+          - forwarded
+        maxAge: "24h"
+      name: "to-api-route-for-memory-api"
+    - match:
+        - uri:
+            prefix: /v1/assignments
+          gateways:
+            - mesh
+      route:
+        - destination:
+            host: agent-api-chart.default.svc.cluster.local
+            port:
+              number: 80
+      corsPolicy:
+        allowOrigins:
+          - exact: https://app.${CLUSTER_DOMAIN}
+          - exact: https://chat.${CLUSTER_DOMAIN}
+          - exact: https://agent.${CLUSTER_DOMAIN}
+          - exact: https://memory.${CLUSTER_DOMAIN}
+          - exact: https://admin.${CLUSTER_DOMAIN}
+          - exact: https://portal.${CLUSTER_DOMAIN}
+          - exact: http://localhost:3000
+          - exact: http://localhost:8080
+          - exact: http://localhost:8081
+          - exact: https://oauth.pstmn.io
+        allowMethods:
+          - POST
+          - GET
+          - PUT
+          - DELETE
+          - PATCH
+          - OPTIONS
+        allowCredentials: true
+        allowHeaders:
+          - content-type
+          - authorization
+          - x-auth-request-access-token
+          - Access-Control-Allow-Origin
+          - gap-auth
+          - server
+          - x-auth-request-email
+          - x-auth-request-preferred-username
+          - x-envoy-upstream-service-time
+          - refresh-token
+          - X-Forwarded-For
+          - x-active-org
+          - forwarded
+        maxAge: "24h"
+      name: "to-api-route-for-agent-api"
+    - match:
+        - uri:
+            prefix: /v1/tools
+          gateways:
+            - mesh
+      route:
+        - destination:
+            host: agent-api-chart.default.svc.cluster.local
+            port:
+              number: 80
+      corsPolicy:
+        allowOrigins:
+          - exact: https://app.${CLUSTER_DOMAIN}
+          - exact: https://chat.${CLUSTER_DOMAIN}
+          - exact: https://agent.${CLUSTER_DOMAIN}
+          - exact: https://memory.${CLUSTER_DOMAIN}
+          - exact: https://admin.${CLUSTER_DOMAIN}
+          - exact: https://portal.${CLUSTER_DOMAIN}
+          - exact: http://localhost:3000
+          - exact: http://localhost:8080
+          - exact: http://localhost:8081
+          - exact: https://oauth.pstmn.io
+        allowMethods:
+          - POST
+          - GET
+          - PUT
+          - DELETE
+          - PATCH
+          - OPTIONS
+        allowCredentials: true
+        allowHeaders:
+          - content-type
+          - authorization
+          - x-auth-request-access-token
+          - Access-Control-Allow-Origin
+          - gap-auth
+          - server
+          - x-auth-request-email
+          - x-auth-request-preferred-username
+          - x-envoy-upstream-service-time
+          - refresh-token
+          - X-Forwarded-For
+          - x-active-org
+          - forwarded
+        maxAge: "24h"
+      name: "to-api-route-for-agent-tools-api"
+    - match:
+        - uri:
+            prefix: /v1/distill
+          gateways:
+            - mesh
+      route:
+        - destination:
+            host: memory-distiller-chart.default.svc.cluster.local
+            port:
+              number: 80
+      corsPolicy:
+        allowOrigins:
+          - exact: https://app.${CLUSTER_DOMAIN}
+          - exact: https://chat.${CLUSTER_DOMAIN}
+          - exact: https://agent.${CLUSTER_DOMAIN}
+          - exact: https://memory.${CLUSTER_DOMAIN}
+          - exact: https://admin.${CLUSTER_DOMAIN}
+          - exact: https://portal.${CLUSTER_DOMAIN}
+          - exact: http://localhost:3000
+          - exact: http://localhost:8080
+          - exact: http://localhost:8081
+          - exact: https://oauth.pstmn.io
+        allowMethods:
+          - POST
+          - GET
+          - PUT
+          - DELETE
+          - PATCH
+          - OPTIONS
+        allowCredentials: true
+        allowHeaders:
+          - content-type
+          - authorization
+          - x-auth-request-access-token
+          - Access-Control-Allow-Origin
+          - gap-auth
+          - server
+          - x-auth-request-email
+          - x-auth-request-preferred-username
+          - x-envoy-upstream-service-time
+          - refresh-token
+          - X-Forwarded-For
+          - x-active-org
+          - forwarded
+        maxAge: "24h"
+      name: "to-api-route-for-memory-distiller-api"
+    - match:
+        - uri:
+            prefix: /v1/admin
+          gateways:
+            - mesh
+      route:
+        - destination:
+            host: admin-api-chart.default.svc.cluster.local
+            port:
+              number: 80
+      corsPolicy:
+        allowOrigins:
+          - exact: https://app.${CLUSTER_DOMAIN}
+          - exact: https://chat.${CLUSTER_DOMAIN}
+          - exact: https://agent.${CLUSTER_DOMAIN}
+          - exact: https://memory.${CLUSTER_DOMAIN}
+          - exact: https://admin.${CLUSTER_DOMAIN}
+          - exact: https://portal.${CLUSTER_DOMAIN}
+          - exact: http://localhost:3000
+          - exact: http://localhost:8080
+          - exact: http://localhost:8081
+          - exact: https://oauth.pstmn.io
+        allowMethods:
+          - POST
+          - GET
+          - PUT
+          - DELETE
+          - PATCH
+          - OPTIONS
+        allowCredentials: true
+        allowHeaders:
+          - content-type
+          - authorization
+          - x-auth-request-access-token
+          - Access-Control-Allow-Origin
+          - gap-auth
+          - server
+          - x-auth-request-email
+          - x-auth-request-preferred-username
+          - x-envoy-upstream-service-time
+          - refresh-token
+          - X-Forwarded-For
+          - x-active-org
+          - forwarded
+        maxAge: "24h"
+      name: "to-api-route-for-admin-api"
+    - match:
+        - uri:
+            prefix: /v1/config
+          gateways:
+            - mesh
+      route:
+        - destination:
+            host: admin-api-chart.default.svc.cluster.local
+            port:
+              number: 80
+      corsPolicy:
+        allowOrigins:
+          - exact: https://app.${CLUSTER_DOMAIN}
+          - exact: https://chat.${CLUSTER_DOMAIN}
+          - exact: https://agent.${CLUSTER_DOMAIN}
+          - exact: https://memory.${CLUSTER_DOMAIN}
+          - exact: https://admin.${CLUSTER_DOMAIN}
+          - exact: https://portal.${CLUSTER_DOMAIN}
+          - exact: http://localhost:3000
+          - exact: http://localhost:8080
+          - exact: http://localhost:8081
+          - exact: https://oauth.pstmn.io
+        allowMethods:
+          - POST
+          - GET
+          - PUT
+          - DELETE
+          - PATCH
+          - OPTIONS
+        allowCredentials: true
+        allowHeaders:
+          - content-type
+          - authorization
+          - x-auth-request-access-token
+          - Access-Control-Allow-Origin
+          - gap-auth
+          - server
+          - x-auth-request-email
+          - x-auth-request-preferred-username
+          - x-envoy-upstream-service-time
+          - refresh-token
+          - X-Forwarded-For
+          - x-active-org
+          - forwarded
+        maxAge: "24h"
+      name: "to-api-route-for-config-admin-api"
+    - match:
+        - uri:
+            prefix: /v1/portal
+          gateways:
+            - mesh
+      route:
+        - destination:
+            host: portal-api-chart.default.svc.cluster.local
+            port:
+              number: 80
+      corsPolicy:
+        allowOrigins:
+          - exact: https://app.${CLUSTER_DOMAIN}
+          - exact: https://chat.${CLUSTER_DOMAIN}
+          - exact: https://agent.${CLUSTER_DOMAIN}
+          - exact: https://memory.${CLUSTER_DOMAIN}
+          - exact: https://admin.${CLUSTER_DOMAIN}
+          - exact: https://portal.${CLUSTER_DOMAIN}
+          - exact: http://localhost:3000
+          - exact: http://localhost:8080
+          - exact: http://localhost:8081
+          - exact: https://oauth.pstmn.io
+        allowMethods:
+          - POST
+          - GET
+          - PUT
+          - DELETE
+          - PATCH
+          - OPTIONS
+        allowCredentials: true
+        allowHeaders:
+          - content-type
+          - authorization
+          - x-auth-request-access-token
+          - Access-Control-Allow-Origin
+          - gap-auth
+          - server
+          - x-auth-request-email
+          - x-auth-request-preferred-username
+          - x-envoy-upstream-service-time
+          - refresh-token
+          - X-Forwarded-For
+          - x-active-org
+          - forwarded
+        maxAge: "24h"
+      name: "to-api-route-for-portal-api"
+    # Aggregated OpenAPI documentation (apidocs-api-server). One prefix match covers the
+    # whole subtree the browser loads: the HTML page, the Swagger UI assets, and each
+    # /v1/api-docs/specs/*.json. Do not add per-asset or per-spec routes.
+    #
+    # No corsPolicy here, unlike the routes above: the docs page and everything it fetches
+    # are all on api.${CLUSTER_DOMAIN}, so no request is ever cross-origin. The upstream
+    # services' own /openapi.json paths stay east-west and are deliberately not routed.
+    #
+    # No rewrite either: the app mounts on /v1/api-docs, the same absolute path it is
+    # served on, because Swagger UI resolves its assets relatively.
+    - match:
+        - uri:
+            prefix: /v1/api-docs
+          gateways:
+            - mesh
+      route:
+        - destination:
+            host: apidocs-api-chart.default.svc.cluster.local
+            port:
+              number: 80
+      name: "to-api-route-for-apidocs"
+---
+apiVersion: networking.istio.io/v1beta1
+kind: VirtualService
+metadata:
+  name: boucio-grafana-virtualservice
+  namespace: default # TODO: to be adjusted later on.  Added for FluxCD server-side application for now.
+spec:
+  hosts:
+    - "grafana.${CLUSTER_DOMAIN}"
+  gateways:
+    - boucio-gateway
+    - mesh
+  http:
+    - match:
+        - scheme:
+            exact: http
+      redirect:
+        scheme: https
+    - match:
+        - gateways:
+            - mesh
+            - boucio-gateway
+      route:
+        - destination:
+            host: grafana.grafana.svc.cluster.local
+            port:
+              number: 80
+      name: "to-grafana-route"
+---
+apiVersion: networking.istio.io/v1beta1
+kind: VirtualService
+metadata:
+  name: boucio-chatbot-virtualservice
+  namespace: default # TODO: to be adjusted later on.  Added for FluxCD server-side application for now.
+spec:
+  hosts:
+    - "chat.${CLUSTER_DOMAIN}"
+  gateways:
+    - boucio-gateway
+    - mesh
+  http:
+    - match:
+        - scheme:
+            exact: http
+      redirect:
+        scheme: https
+    # - match:
+    #     - gateways:
+    #         - boucio-gateway
+    #   route:
+    #     - destination:
+    #         host: oauth2-proxy-rel.oauth2-proxy.svc.cluster.local
+    #         port:
+    #           number: 80
+    #   name: "to-oauth2proxy-route"
+    - match:
+        - uri:
+            prefix: /oauth2
+          gateways:
+            - mesh
+      route:
+        - destination:
+            host: oauth2-proxy-rel.oauth2-proxy.svc.cluster.local
+            port:
+              number: 80
+      name: "to-oauth2proxy-route-2"
+    - match:
+        - gateways:
+            - mesh
+            - boucio-gateway
+      route:
+        - destination:
+            host: chatbot-chart-service.default.svc.cluster.local
+            port:
+              number: 80
+      name: "to-chatbot-route"
+---
+apiVersion: networking.istio.io/v1beta1
+kind: VirtualService
+metadata:
+  name: boucio-agent-virtualservice
+  namespace: default # TODO: to be adjusted later on.  Added for FluxCD server-side application for now.
+spec:
+  hosts:
+    - "agent.${CLUSTER_DOMAIN}"
+  gateways:
+    - boucio-gateway
+    - mesh
+  http:
+    - match:
+        - scheme:
+            exact: http
+      redirect:
+        scheme: https
+    # - match:
+    #     - gateways:
+    #         - boucio-gateway
+    #   route:
+    #     - destination:
+    #         host: oauth2-proxy-rel.oauth2-proxy.svc.cluster.local
+    #         port:
+    #           number: 80
+    #   name: "to-oauth2proxy-route"
+    - match:
+        - uri:
+            prefix: /oauth2
+          gateways:
+            - mesh
+      route:
+        - destination:
+            host: oauth2-proxy-rel.oauth2-proxy.svc.cluster.local
+            port:
+              number: 80
+      name: "to-oauth2proxy-route-2"
+    - match:
+        - gateways:
+            - mesh
+            - boucio-gateway
+      route:
+        - destination:
+            host: agent-chart-service.default.svc.cluster.local
+            port:
+              number: 80
+      name: "to-agent-route"
+---
+apiVersion: networking.istio.io/v1beta1
+kind: VirtualService
+metadata:
+  name: boucio-memory-virtualservice
+  namespace: default # TODO: to be adjusted later on.  Added for FluxCD server-side application for now.
+spec:
+  hosts:
+    - "memory.${CLUSTER_DOMAIN}"
+  gateways:
+    - boucio-gateway
+    - mesh
+  http:
+    - match:
+        - scheme:
+            exact: http
+      redirect:
+        scheme: https
+    # - match:
+    #     - gateways:
+    #         - boucio-gateway
+    #   route:
+    #     - destination:
+    #         host: oauth2-proxy-rel.oauth2-proxy.svc.cluster.local
+    #         port:
+    #           number: 80
+    #   name: "to-oauth2proxy-route"
+    - match:
+        - uri:
+            prefix: /oauth2
+          gateways:
+            - mesh
+      route:
+        - destination:
+            host: oauth2-proxy-rel.oauth2-proxy.svc.cluster.local
+            port:
+              number: 80
+      name: "to-oauth2proxy-route-2"
+    - match:
+        - gateways:
+            - mesh
+            - boucio-gateway
+      route:
+        - destination:
+            host: memory-chart-service.default.svc.cluster.local
+            port:
+              number: 80
+      name: "to-memory-ui-route"
+---
+apiVersion: networking.istio.io/v1beta1
+kind: VirtualService
+metadata:
+  name: boucio-kiali-virtualservice
+  namespace: kiali # TODO: to be adjusted later on.  Added for FluxCD server-side application for now.
+spec:
+  hosts:
+    - "kiali.${CLUSTER_DOMAIN}"
+  gateways:
+    - default/boucio-gateway
+    - mesh
+  http:
+    - match:
+        - scheme:
+            exact: http
+      redirect:
+        scheme: https
+    - match:
+        - gateways:
+            - mesh
+            - default/boucio-gateway
+      route:
+        - destination:
+            host: kiali.kiali.svc.cluster.local
+            port:
+              number: 20001
+      name: "to-kiali-route"
+---
+apiVersion: networking.istio.io/v1beta1
+kind: VirtualService
+metadata:
+  name: boucio-jaeger-virtualservice
+  namespace: opentelemetry # TODO: to be adjusted later on.  Added for FluxCD server-side application for now.
+spec:
+  hosts:
+    - "jaeger.${CLUSTER_DOMAIN}"
+    - "tracing.${CLUSTER_DOMAIN}"
+  gateways:
+    - default/boucio-gateway
+    - mesh
+  http:
+    - match:
+        - scheme:
+            exact: http
+      redirect:
+        scheme: https
+    - match:
+        - gateways:
+            - mesh
+            - default/boucio-gateway
+      route:
+        - destination:
+            host: jaeger-v2-nodeport.opentelemetry.svc.cluster.local
+            port:
+              number: 16686
+      name: "to-jaeger-route"
+---
+apiVersion: networking.istio.io/v1alpha3
+kind: ServiceEntry
+metadata:
+  name: ollama-registry
+  namespace: default # TODO: to be adjusted later on.  Added for FluxCD server-side application for now.
+spec:
+  hosts:
+    - registry.ollama.ai
+  ports:
+    - number: 443
+      name: https
+      protocol: HTTPS
+  resolution: DNS
+  location: MESH_EXTERNAL
+---
+apiVersion: networking.istio.io/v1alpha3
+kind: ServiceEntry
+metadata:
+  name: allow-cloudflare-egress
+  namespace: default # TODO: to be adjusted later on.  Added for FluxCD server-side application for now.
+spec:
+  hosts:
+    - cloudflarestorage.com
+  ports:
+    - number: 443
+      name: https
+      protocol: HTTPS
+  resolution: DNS
+  location: MESH_EXTERNAL
+---
+apiVersion: networking.istio.io/v1beta1
+kind: ServiceEntry
+metadata:
+  name: allow-keycloak-egress
+  namespace: default # TODO: to be adjusted later on.  Added for FluxCD server-side application for now.
+spec:
+  hosts:
+    - sso.${CLUSTER_DOMAIN}
+  ports:
+    - number: 443
+      name: https
+      protocol: HTTPS
+  resolution: DNS
+  location: MESH_EXTERNAL
+---
+apiVersion: networking.istio.io/v1beta1
+kind: ServiceEntry
+metadata:
+  name: allow-registry-egress
+  namespace: default # TODO: to be adjusted later on.  Added for FluxCD server-side application for now.
+spec:
+  # Container/chart registry egress for meshed clients (kubelet pulls bypass the
+  # mesh). pkg-containers.githubusercontent.com is ghcr.io's blob CDN; harmless
+  # when REGISTRY_HOST points elsewhere (e.g. registry.gitlab.com).
+  hosts:
+    - ${REGISTRY_HOST:=ghcr.io}
+    - pkg-containers.githubusercontent.com
+  ports:
+    - number: 443
+      name: https
+      protocol: HTTPS
+  resolution: DNS
+  location: MESH_EXTERNAL

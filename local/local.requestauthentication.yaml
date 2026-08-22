@@ -1,0 +1,28 @@
+## TODO: not working!!  Is that necessary??
+apiVersion: security.istio.io/v1beta1
+kind: RequestAuthentication
+metadata:
+  name: forward-jwt
+  #namespace: istio-system
+  namespace: default # TODO: to be adjusted later on.  Added for FluxCD server-side application for now.
+spec:
+  selector:
+    matchLabels:
+      app: istio-ingressgateway
+      istio: ingressgateway
+  jwtRules:
+    - issuer: https://sso.${CLUSTER_DOMAIN}/realms/users
+      jwksUri: https://sso.${CLUSTER_DOMAIN}/realms/users/protocol/openid-connect/certs
+      # - issuer: "testing@secure.istio.io"
+      #   jwksUri: "https://raw.githubusercontent.com/istio/istio/release-1.7/security/tools/jwt/samples/jwks.json"
+      audiences: [
+          "oauth2-proxy",
+          "react-app",
+          "chatbot-ui",
+          "agent-ui",
+          "memory-ui",
+          "admin-ui",
+          "portal-ui",
+          "agent-cli",
+        ] # Validate tokens for these audiences
+      forwardOriginalToken: true
