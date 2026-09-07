@@ -1,0 +1,36 @@
+apiVersion: networking.istio.io/v1alpha3
+kind: DestinationRule
+metadata:
+  name: boucio-enable-mtls
+  namespace: default # TODO: to be adjusted later on.  Added for FluxCD server-side application for now.
+spec:
+  host: "*"
+  trafficPolicy:
+    tls:
+      mode: ISTIO_MUTUAL
+      #mode: SIMPLE
+      #mode: DISABLE
+      #mode: MUTUAL
+---
+apiVersion: networking.istio.io/v1alpha3
+kind: DestinationRule
+metadata:
+  name: dr-disable-mtls-ollama
+  namespace: default # TODO: to be adjusted later on.  Added for FluxCD server-side application for now.
+spec:
+  host: registry.ollama.ai
+  trafficPolicy:
+    tls:
+      mode: DISABLE
+---
+apiVersion: networking.istio.io/v1beta1
+kind: DestinationRule
+metadata:
+  name: sso-bouc-destination-rule
+  namespace: default # TODO: to be adjusted later on.  Added for FluxCD server-side application for now.
+spec:
+  host: sso.${CLUSTER_DOMAIN}
+  trafficPolicy:
+    tls:
+      mode: DISABLE
+      #mode: SIMPLE

@@ -1,0 +1,11 @@
+apiVersion: security.istio.io/v1beta1
+kind: PeerAuthentication
+metadata:
+  name: boucio-peer-authentication
+  #namespace: istio-system
+  namespace: default # TODO: to be adjusted later on.  Added for FluxCD server-side application for now.
+spec:
+  mtls:
+    mode: STRICT
+    #mode: PERMISSIVE
+    #mode: DISABLE

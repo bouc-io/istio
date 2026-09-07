@@ -1,0 +1,58 @@
+apiVersion: install.istio.io/v1alpha1
+kind: IstioOperator
+metadata:
+  namespace: istio-system
+  name: default-installation
+spec:
+  profile: default
+  meshConfig:
+    accessLogFile: /dev/stdout
+    outboundTrafficPolicy:
+      #mode: ALLOW_ANY
+      mode: REGISTRY_ONLY
+  # TODO: next section used for what?  Necessary?  To validate...
+  # values:
+  #   global:
+  #     meshID: mesh1
+  #     multiCluster:
+  #       clusterName: "Kubernetes"
+  #     network: ""
+  components:
+    base:
+      k8s:
+        replicaCount: 3
+        podDisruptionBudget:
+          minAvailable: 1
+    ingressGateways:
+      - name: istio-ingressgateway
+        enabled: true
+        k8s:
+          replicaCount: 3
+          podDisruptionBudget:
+            minAvailable: 1
+    egressGateways:
+      - name: istio-egressgateway
+        enabled: true
+        k8s:
+          replicaCount: 2
+          podDisruptionBudget:
+            minAvailable: 1
+    pilot:
+      k8s:
+        replicaCount: 3
+        podDisruptionBudget:
+          minAvailable: 1
+    cni:
+      #namespace: istio-system
+      namespace: kube-system # Strongly recommended for GKE
+      enabled: true
+      #chained: true
+  values:
+    cni:
+      chained: true
+      cniBinDir: /home/kubernetes/bin
+      cniConfDir: /etc/cni/net.d
+      logLevel: info
+      excludeNamespaces:
+        - istio-system
+        - kube-system

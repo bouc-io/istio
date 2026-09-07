@@ -1,0 +1,66 @@
+apiVersion: install.istio.io/v1alpha1
+kind: IstioOperator
+metadata:
+  namespace: istio-system
+  name: demo-installation
+spec:
+  profile: demo
+  meshConfig:
+    accessLogFile: /dev/stdout
+    outboundTrafficPolicy:
+      #mode: ALLOW_ANY
+      mode: REGISTRY_ONLY
+  # TODO: next section used for what?  Necessary?  To validate...
+  # values:
+  #   global:
+  #     meshID: mesh1
+  #     multiCluster:
+  #       clusterName: "Kubernetes"
+  #     network: ""
+
+  # TODO: alternate configuration??  to evaluate...
+  # Refer to: https://chrishaessig.medium.com/keycloak-with-istio-and-oauth2-proxy-65227a383c15
+  # meshConfig:
+  #   extensionProviders:
+  #     - name: "oauth2-authz"
+  #       envoyExtAuthzHttp:
+  #         service: "oauth2-proxy.keycloak.svc.cluster.local"
+  #         port: 80
+  #         includeHeadersInCheck:
+  #           - "authorization"
+  #           - "cookie"
+  #           - "x-forwarded-for"
+  #           - "x-request-id"
+  #         includeHeadersInResponse:
+  #           - "authorization"
+  #           - "set-cookie"
+  #           - "x-auth-user"
+  #         timeout: "5s"
+  #   defaultProviders:
+  #     authorization: "oauth2-authz"
+
+  components:
+    base:
+      k8s:
+        replicaCount: 1
+        podDisruptionBudget:
+          minAvailable: 0%
+    ingressGateways:
+      - name: istio-ingressgateway
+        enabled: true
+        k8s:
+          replicaCount: 1
+          podDisruptionBudget:
+            minAvailable: 0%
+    egressGateways:
+      - name: istio-egressgateway
+        enabled: true
+        k8s:
+          replicaCount: 1
+          podDisruptionBudget:
+            minAvailable: 0%
+    pilot:
+      k8s:
+        replicaCount: 1
+        podDisruptionBudget:
+          minAvailable: 0%
